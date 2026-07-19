@@ -5,7 +5,76 @@ SCRIPT_VERSION="v2.0.0"
 BRAND_NAME="TixoTunnel"
 BRAND_CHANNEL="@TixoCloud"
 BRAND_WEBSITE="TixoCloud.com"
-GITHUB_REPO="YOUR_GITHUB_USERNAME/TixoTunnel"
+GITHUB_REPO="erfanrec/TixoTunnel"
+
+INSTALL_DIR="/root/tixotunnel-core"
+PANEL_PATH="/root/TixoTunnel.sh"
+COMMAND_PATH="/usr/local/bin/tixotunnel"
+CORE_DOWNLOAD_URL="https://github.com/${GITHUB_REPO}/releases/latest/download/tixotunnel-core"
+PANEL_DOWNLOAD_URL="https://raw.githubusercontent.com/${GITHUB_REPO}/main/TixoTunnel.sh"
+
+bootstrap_install() {
+    if [[ ${EUID} -ne 0 ]]; then
+        echo "TixoTunnel must be run as root."
+        exit 1
+    fi
+
+    # Running from curl/process substitution or an arbitrary local path:
+    # install the canonical copy first, then continue from it.
+    local current_path="${BASH_SOURCE[0]:-}"
+    if [[ "$current_path" != "$PANEL_PATH" && "$current_path" != "$COMMAND_PATH" ]]; then
+        command -v curl >/dev/null 2>&1 || {
+            apt-get update -y && apt-get install -y curl ca-certificates
+        }
+
+        mkdir -p "$INSTALL_DIR"
+        local tmp_panel tmp_core
+        tmp_panel=$(mktemp)
+        tmp_core=$(mktemp)
+        trap 'rm -f "$tmp_panel" "$tmp_core"' RETURN
+
+        clear
+        printf '\033[31m%s\033[0m\n' '        ▄▄▄▄▄▄▄'
+        printf '\033[31m%s\033[0m\n' '     ▄██████████▄'
+        printf '\033[31m%s\033[0m\n' '   ▄████▀▀  ▀████▄       T I X O'
+        printf '\033[31m%s\033[0m\n' '  ████▀  ▄▄  ▀████      T U N N E L'
+        printf '\033[31m%s\033[0m\n' '   ▀████▄▄▄▄████▀'
+        printf '\033[31m%s\033[0m\n' '      ▀██████▀'
+        printf '\033[36mAutomated installer by @TixoCloud — TixoCloud.com\033[0m\n\n'
+
+        echo '[1/4] Downloading TixoTunnel panel...'
+        curl -fL --retry 3 --connect-timeout 15 -o "$tmp_panel" "$PANEL_DOWNLOAD_URL" || {
+            echo 'Panel download failed.'
+            exit 1
+        }
+
+        echo '[2/4] Downloading TixoTunnel core...'
+        curl -fL --retry 3 --connect-timeout 15 -o "$tmp_core" "$CORE_DOWNLOAD_URL" || {
+            echo 'Core download failed. Make sure tixotunnel-core exists in the latest GitHub Release.'
+            exit 1
+        }
+
+        echo '[3/4] Creating directories and setting permissions...'
+        install -m 0755 "$tmp_panel" "$PANEL_PATH"
+        install -m 0755 "$tmp_panel" "$COMMAND_PATH"
+        install -m 0755 "$tmp_core" "$INSTALL_DIR/tixotunnel-core"
+
+        if [[ -d /root/backhaul-core ]]; then
+            find /root/backhaul-core -maxdepth 1 -type f -name '*.toml' \
+                -exec cp -n {} "$INSTALL_DIR/" \; 2>/dev/null || true
+        fi
+
+        echo '[4/4] Installation completed.'
+        echo 'Run later with: tixotunnel'
+        sleep 1
+        exec "$PANEL_PATH"
+    fi
+
+    mkdir -p "$INSTALL_DIR"
+    chmod 0755 "$PANEL_PATH" "$COMMAND_PATH" 2>/dev/null || true
+}
+
+bootstrap_install
 
 service_dir="/etc/systemd/system"
 config_dir="/root/tixotunnel-core"
