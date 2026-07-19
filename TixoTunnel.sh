@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -o pipefail
 
-SCRIPT_VERSION="NOVA-4.0"
+SCRIPT_VERSION="NOVA-4.2"
 ENGINE_EDITION="AETHER-X1"
 BRAND_NAME="TixoTunnel"
 BRAND_CHANNEL="@TixoCloud"
@@ -543,7 +543,47 @@ fi
 colorize red "Invalid destination IPv4. Example: 203.0.113.10"
 done
 interface=$(ip route show default | awk '{print $5}')
-prompt_with_default "Network Interface" $interface CONFIG[ipx_interface]
+prompt_with_default "Network Interface" "$interface" CONFIG[ipx_interface]
+
+echo ""
+colorize blue "━━━ Custom Packet / IP Spoofing ━━━" bold
+colorize gray "Optional: enable this only when you need custom packet spoofing."
+prompt_boolean "Enable Custom Packet" "false" CONFIG[custom_packet]
+if [[ "${CONFIG[custom_packet]}" == "true" ]]; then
+    if [[ "$mode" == "server" ]]; then
+        while :; do
+            prompt_with_default "SRC Spoof IP" "" CONFIG[spoof_src_ip]
+            if valid_ipv4 "${CONFIG[spoof_src_ip]}" && [[ "${CONFIG[spoof_src_ip]}" != "0.0.0.0" ]]; then
+                break
+            fi
+            colorize red "Invalid SRC spoof IPv4. Example: 185.143.234.120"
+        done
+        while :; do
+            prompt_with_default "DST Spoof IP" "" CONFIG[spoof_dst_ip]
+            if valid_ipv4 "${CONFIG[spoof_dst_ip]}" && [[ "${CONFIG[spoof_dst_ip]}" != "0.0.0.0" ]]; then
+                break
+            fi
+            colorize red "Invalid DST spoof IPv4. Example: 185.143.234.122"
+        done
+    else
+        # On KHAREJ (client), ask in the reverse order requested by the panel flow.
+        while :; do
+            prompt_with_default "DST Spoof IP" "" CONFIG[spoof_dst_ip]
+            if valid_ipv4 "${CONFIG[spoof_dst_ip]}" && [[ "${CONFIG[spoof_dst_ip]}" != "0.0.0.0" ]]; then
+                break
+            fi
+            colorize red "Invalid DST spoof IPv4. Example: 185.143.234.120"
+        done
+        while :; do
+            prompt_with_default "SRC Spoof IP" "" CONFIG[spoof_src_ip]
+            if valid_ipv4 "${CONFIG[spoof_src_ip]}" && [[ "${CONFIG[spoof_src_ip]}" != "0.0.0.0" ]]; then
+                break
+            fi
+            colorize red "Invalid SRC spoof IPv4. Example: 185.143.234.122"
+        done
+    fi
+fi
+
 if [[ "${CONFIG[ipx_profile]}" == "icmp" ]]; then
 prompt_with_default "ICMP Type" "0" CONFIG[ipx_icmp_type]
 prompt_with_default "ICMP Code" "0" CONFIG[ipx_icmp_code]
@@ -599,6 +639,16 @@ echo "profile = \"${CONFIG[ipx_profile]}\""
 echo "listen_ip = \"${CONFIG[ipx_listen_ip]}\""
 echo "dst_ip = \"${CONFIG[ipx_dst_ip]}\""
 echo "interface = \"${CONFIG[ipx_interface]}\""
+if [[ "${CONFIG[custom_packet]}" == "true" ]]; then
+    if [[ "$mode" == "server" ]]; then
+        echo "spoof_src_ip = \"${CONFIG[spoof_src_ip]}\""
+        echo "spoof_dst_ip = \"${CONFIG[spoof_dst_ip]}\""
+    else
+        echo "spoof_dst_ip = \"${CONFIG[spoof_dst_ip]}\""
+        echo "spoof_src_ip = \"${CONFIG[spoof_src_ip]}\""
+    fi
+    echo "custom_packet = true"
+fi
 [[ -n "${CONFIG[ipx_icmp_type]}" ]] && echo "icmp_type = ${CONFIG[ipx_icmp_type]}"
 [[ -n "${CONFIG[ipx_icmp_code]}" ]] && echo "icmp_code = ${CONFIG[ipx_icmp_code]}"
 echo ""
