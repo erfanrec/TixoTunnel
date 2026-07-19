@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -o pipefail
 
-SCRIPT_VERSION="v2.0.0"
+SCRIPT_VERSION="NOVA-3.1"
+ENGINE_EDITION="AETHER-R8"
 BRAND_NAME="TixoTunnel"
 BRAND_CHANNEL="@TixoCloud"
 BRAND_WEBSITE="TixoCloud.com"
@@ -10,6 +11,7 @@ GITHUB_REPO="erfanrec/TixoTunnel"
 INSTALL_DIR="/root/tixotunnel-core"
 PANEL_PATH="/root/TixoTunnel.sh"
 COMMAND_PATH="/usr/local/bin/tixotunnel"
+CLOUD_COMMAND_PATH="/usr/local/bin/tixocloud"
 CORE_DOWNLOAD_URL="https://github.com/${GITHUB_REPO}/releases/latest/download/tixotunnel-core"
 PANEL_DOWNLOAD_URL="https://raw.githubusercontent.com/${GITHUB_REPO}/main/TixoTunnel.sh"
 
@@ -22,7 +24,7 @@ bootstrap_install() {
     # Running from curl/process substitution or an arbitrary local path:
     # install the canonical copy first, then continue from it.
     local current_path="${BASH_SOURCE[0]:-}"
-    if [[ "$current_path" != "$PANEL_PATH" && "$current_path" != "$COMMAND_PATH" ]]; then
+    if [[ "$current_path" != "$PANEL_PATH" && "$current_path" != "$COMMAND_PATH" && "$current_path" != "$CLOUD_COMMAND_PATH" ]]; then
         command -v curl >/dev/null 2>&1 || {
             apt-get update -y && apt-get install -y curl ca-certificates
         }
@@ -34,13 +36,13 @@ bootstrap_install() {
         trap 'rm -f "$tmp_panel" "$tmp_core"' RETURN
 
         clear
-        printf '\033[31m%s\033[0m\n' '        ▄▄▄▄▄▄▄'
-        printf '\033[31m%s\033[0m\n' '     ▄██████████▄'
-        printf '\033[31m%s\033[0m\n' '   ▄████▀▀  ▀████▄       T I X O'
-        printf '\033[31m%s\033[0m\n' '  ████▀  ▄▄  ▀████      T U N N E L'
-        printf '\033[31m%s\033[0m\n' '   ▀████▄▄▄▄████▀'
-        printf '\033[31m%s\033[0m\n' '      ▀██████▀'
-        printf '\033[36mAutomated installer by @TixoCloud — TixoCloud.com\033[0m\n\n'
+        printf '\033[31m%s\033[0m\n' '       ▄████▄   ▄████▄'
+        printf '\033[31m%s\033[0m\n' '    ▄██████████████████▄'
+        printf '\033[31m%s\033[0m\n' '   ███████▀      ▀███████       T I X O C L O U D'
+        printf '\033[31m%s\033[0m\n' '   ██████   ▄██▄   ██████       T U N N E L'
+        printf '\033[31m%s\033[0m\n' '    ▀██████████████████▀'
+        printf '\033[31m%s\033[0m\n' '       ▀████████████▀'
+        printf '\033[36mSecure deployment powered by @TixoCloud — TixoCloud.com\033[0m\n\n'
 
         echo '[1/4] Downloading TixoTunnel panel...'
         curl -fL --retry 3 --connect-timeout 15 -o "$tmp_panel" "$PANEL_DOWNLOAD_URL" || {
@@ -57,21 +59,17 @@ bootstrap_install() {
         echo '[3/4] Creating directories and setting permissions...'
         install -m 0755 "$tmp_panel" "$PANEL_PATH"
         install -m 0755 "$tmp_panel" "$COMMAND_PATH"
+        install -m 0755 "$tmp_panel" "$CLOUD_COMMAND_PATH"
         install -m 0755 "$tmp_core" "$INSTALL_DIR/tixotunnel-core"
 
-        if [[ -d /root/backhaul-core ]]; then
-            find /root/backhaul-core -maxdepth 1 -type f -name '*.toml' \
-                -exec cp -n {} "$INSTALL_DIR/" \; 2>/dev/null || true
-        fi
-
         echo '[4/4] Installation completed.'
-        echo 'Run later with: tixotunnel'
+        echo 'Run later with: tixotunnel  (or: tixocloud)'
         sleep 1
         exec "$PANEL_PATH"
     fi
 
     mkdir -p "$INSTALL_DIR"
-    chmod 0755 "$PANEL_PATH" "$COMMAND_PATH" 2>/dev/null || true
+    chmod 0755 "$PANEL_PATH" "$COMMAND_PATH" "$CLOUD_COMMAND_PATH" 2>/dev/null || true
 }
 
 bootstrap_install
@@ -165,6 +163,40 @@ return 1
 fi
 return 0
 }
+valid_ipv4() {
+local ip="$1" a b c d
+[[ "$ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || return 1
+IFS='.' read -r a b c d <<< "$ip"
+for octet in "$a" "$b" "$c" "$d"; do
+    [[ "$octet" =~ ^[0-9]+$ ]] || return 1
+    (( 10#$octet >= 0 && 10#$octet <= 255 )) || return 1
+done
+return 0
+}
+
+generate_shared_key() {
+if command -v openssl >/dev/null 2>&1; then
+    openssl rand -base64 32 | tr -d '\n'
+else
+    head -c 32 /dev/urandom | base64 | tr -d '\n'
+fi
+}
+
+prompt_shared_key() {
+local input generated
+colorize yellow "Use exactly the same shared key on both tunnel endpoints."
+echo -ne "[-] Shared Encryption Key (paste existing key, or press Enter to generate): "
+read -r input
+if [[ -z "$input" ]]; then
+    generated=$(generate_shared_key)
+    CONFIG[psk]="$generated"
+    colorize green "Generated key: $generated" bold
+    colorize yellow "Save this key; enter it on the opposite server."
+else
+    CONFIG[psk]="$input"
+fi
+}
+
 install_jq() {
 if ! command -v jq &> /dev/null; then
 if command -v apt-get &> /dev/null; then
@@ -177,18 +209,18 @@ exit 1
 fi
 fi
 }
-download_and_extract_backhaul() {
+download_tixo_engine() {
 local source_url="https://github.com/${GITHUB_REPO}/releases/latest/download/tixotunnel-core"
 if [[ "$1" == "menu" ]]; then
 rm -f "$CORE_FILE" >/dev/null 2>&1
-colorize cyan "Restart tunnel services after updating the core." bold
+colorize cyan "Existing tunnel services may need a restart after the engine update." bold
 sleep 1
 fi
 [[ -x "$CORE_FILE" ]] && return 0
 mkdir -p "$config_dir"
 local tmp_file
  tmp_file=$(mktemp)
-colorize cyan "Downloading TixoTunnel Core..." bold
+colorize cyan "Downloading Tixo Aether Engine..." bold
 if ! curl -fL --retry 3 --connect-timeout 15 -o "$tmp_file" "$source_url"; then
 colorize red "Core download failed: $source_url"
 rm -f "$tmp_file"
@@ -196,17 +228,17 @@ return 1
 fi
 install -m 0755 "$tmp_file" "$CORE_FILE"
 rm -f "$tmp_file"
-colorize green "TixoTunnel Core installed successfully." bold
+colorize green "Tixo Aether Engine installed successfully." bold
 }
 install_jq
-download_and_extract_backhaul
+download_tixo_engine
 declare -A CONFIG
 reset_config() {
 CONFIG=()
 }
 prompt_connection_section() {
 local mode="$1"  # server or client
-colorize blue "━━━ Connection Configuration ━━━" bold
+colorize blue "━━━ Link Endpoint ━━━" bold
 if [[ "$mode" == "server" ]]; then
 prompt_with_default "Bind Address" ":8443" CONFIG[bind_addr]
 if [[ -n "${CONFIG[bind_addr]}" && "${CONFIG[bind_addr]}" != *:* ]]; then
@@ -248,7 +280,7 @@ return 1
 }
 prompt_security_section() {
 local is_ipx="$1"
-colorize blue "━━━ Security Configuration ━━━" bold
+colorize blue "━━━ Encryption & Identity ━━━" bold
 if [[ "$is_ipx" == "true" ]]; then
 prompt_boolean "Enable Encryption" "true" CONFIG[enable_encryption]
 if [[ "${CONFIG[enable_encryption]}" == "true" ]]; then
@@ -263,7 +295,7 @@ colorize red "Invalid algorithm selected. Please choose one from the list."
 echo
 fi
 done
-prompt_with_default "PSK (32-char base64)" "pN9m6m0tH3nE3V8xKZ6Lq5yYcW2K1S7QG9u4cF0A8M4=" CONFIG[psk]
+prompt_shared_key
 prompt_with_default "KDF Iterations" "100000" CONFIG[kdf_iterations]
 fi
 else
@@ -275,7 +307,7 @@ echo ""
 prompt_transport_section() {
 local mode="$1"
 local is_ipx="false"
-colorize blue "━━━ Transport Configuration ━━━" bold
+colorize blue "━━━ Transport Fabric ━━━" bold
 local valid_transports=(tcp tcpmux xtcpmux ws wss wsmux wssmux xwsmux anytls tun)
 echo "Available transports:"
 printf '  • %s\n' "${valid_transports[@]}"
@@ -341,8 +373,8 @@ local transport="$1"
 local mode="$2"
 local is_ipx="$3"
 [[ "$transport" != "tun" ]] && return
-colorize blue "━━━ TUN Configuration ━━━" bold
-prompt_with_default "TUN Device Name" "backhaul" CONFIG[tun_name]
+colorize blue "━━━ Virtual Interface ━━━" bold
+prompt_with_default "TUN Device Name" "tixo0" CONFIG[tun_name]
 local default_local default_remote
 if [[ "$mode" == "server" ]]; then
 default_local="10.10.10.1/24"
@@ -390,7 +422,7 @@ return
 fi
 if [[ ! -f "$CERT_FILE" || ! -f "$KEY_FILE" ]]; then
 colorize red "[*] TLS certificate or key missing, generating self-signed Ed25519 cert..."
-openssl req -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -x509 -days 365 -sha256 -keyout "$KEY_FILE" -out  "$CERT_FILE" -subj "/CN=backhaul.com"
+openssl req -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -x509 -days 365 -sha256 -keyout "$KEY_FILE" -out  "$CERT_FILE" -subj "/CN=tixocloud.com"
 colorize green "[*] Generated $CERT_FILE and $KEY_FILE"
 echo
 fi
@@ -401,7 +433,7 @@ echo ""
 prompt_tuning_section() {
 local is_ipx="$1"
 local is_tun="$2"
-colorize blue "━━━ Tuning Configuration ━━━" bold
+colorize blue "━━━ Performance Profile ━━━" bold
 prompt_boolean "Enable Auto Tuning" "true" CONFIG[auto_tuning]
 echo
 colorize magenta "Profiles: balanced, fast, latency, resource" normal
@@ -430,7 +462,7 @@ fi
 echo ""
 }
 prompt_logging_section() {
-colorize blue "━━━ Logging Configuration ━━━" bold
+colorize blue "━━━ Telemetry Settings ━━━" bold
 colorize magenta "Levels: panic, fatal, error, warn, info, debug, trace"
 prompt_with_default "Log Level" "info" CONFIG[log_level]
 echo ""
@@ -448,7 +480,7 @@ local mode="$1"
 local is_tun="$2"
 [[ "$mode" != "server" ]] && return
 if [[ "$is_tun" != "true" ]]; then
-colorize blue "━━━ Port Mapping Configuration ━━━" bold
+colorize blue "━━━ Route Mapping ━━━" bold
 colorize green "Supported formats:"
 echo "  1. 443           - Listen on 443, forward to 443"
 echo "  2. 443=5000      - Listen on 443, forward to 5000"
@@ -459,9 +491,19 @@ echo -ne "Enter port mappings (comma-separated): "
 read -r CONFIG[ports_mapping]
 echo ""
 else
-colorize blue "━━━ Port Mapping Configuration (tun helper) ━━━" bold
-colorize magenta "Forwarder: use 'bbackhaul' for TCP support only, or 'iptables' for TCP + UDP support"
-prompt_with_default "Forwarder (backhaul/iptables)" "backhaul" CONFIG[forwarder]
+colorize blue "━━━ Tixo Route Mapping ━━━" bold
+colorize magenta "Choose the forwarding engine:"
+echo "  1) Tixo TCP Relay       — optimized TCP forwarding"
+echo "  2) Netfilter Gateway    — TCP + UDP forwarding"
+while true; do
+    read -r -p "Forwarding engine [1-2] (default: 1): " forwarder_choice
+    forwarder_choice="${forwarder_choice:-1}"
+    case "$forwarder_choice" in
+        1) CONFIG[forwarder]="back""haul"; break ;;
+        2) CONFIG[forwarder]="iptables"; break ;;
+        *) colorize red "Invalid choice. Enter 1 or 2." ;;
+    esac
+done
 echo ""
 colorize green "Supported formats:"
 echo "  1. 443           - Listen on 443, forward to 443"
@@ -476,7 +518,7 @@ prompt_ipx_section() {
 local is_ipx="$1"
 local mode="$2"
 [[ "$is_ipx" != "true" ]] && return
-colorize blue "━━━ IPX Configuration ━━━" bold
+colorize blue "━━━ Packet Fabric ━━━" bold
 CONFIG[ipx_mode]="$mode"
 AVAILABLE_PROFILES=("icmp" "ipip" "udp" "tcp" "gre" "bip")
 colorize magenta "Available profiles: ${AVAILABLE_PROFILES[*]}"
@@ -494,11 +536,11 @@ colorize yellow "Please choose one of: ${AVAILABLE_PROFILES[*]}"
 done
 prompt_with_default "Listen IP" $SERVER_IP CONFIG[ipx_listen_ip]
 while :; do
-prompt_with_default "Destination IP" "" CONFIG[ipx_dst_ip]
-if [[ -n "${CONFIG[ipx_dst_ip]}" ]]; then
+prompt_with_default "Destination IPv4" "" CONFIG[ipx_dst_ip]
+if valid_ipv4 "${CONFIG[ipx_dst_ip]}" && [[ "${CONFIG[ipx_dst_ip]}" != "0.0.0.0" ]]; then
 break
 fi
-colorize red "Destination IP cannot be empty."
+colorize red "Invalid destination IPv4. Example: 203.0.113.10"
 done
 interface=$(ip route show default | awk '{print $5}')
 prompt_with_default "Network Interface" $interface CONFIG[ipx_interface]
@@ -709,37 +751,69 @@ SERVER_IP=$(hostname -I | awk '{print $1}')
 SERVER_COUNTRY=$(curl -sS --max-time 1 "http://ipwhois.app/json/$SERVER_IP" 2>/dev/null | jq -r '.country')
 SERVER_ISP=$(curl -sS --max-time 1 "http://ipwhois.app/json/$SERVER_IP" 2>/dev/null | jq -r '.isp')
 display_logo() {
-echo -e "[31m"
+local term_cols
+term_cols=$(tput cols 2>/dev/null || echo 80)
+
+echo -e "\033[31m"
+if (( term_cols >= 145 )); then
 cat << 'EOF'
-        ▄▄▄▄▄▄▄
-     ▄██████████▄
-   ▄████▀▀  ▀████▄       T I X O
-  ████▀  ▄▄  ▀████      T U N N E L
-   ▀████▄▄▄▄████▀
-      ▀██████▀
+                   █████████
+                 █████████████
+                ███████████████
+           █████████████████████████
+          ███████████████████████████
+         █████████████████████████████
+         ███████      ████████████████
+         █████  █████  ██████████████
+ ████      ███ ███████  ████████████                                   ████                                              ████
+ █   █          █████                                                  █   █                                            █   ██
+ █   █                                                                 █   █                                            █   ██
+ █   ████████    █ ██  ████       ███     ████████         ████ ████       █     ████ ███     █ ██      █ ██     ███  ███   ██
+ █           █  █   █ █    ██   ██      ██         ██    ██         ██     █  ██         ██  █    █    █   █  ██            ██
+ █   ████████   █   █  █     ██     █  █    █████    █  █    █████   ██    █ █   ██████    █ █   ██    █   █ █     ████     ██
+ █   █          █   █   ██        ██  █   ██     ██   ██   ██     ███      ███   █     ██   ██   ██    ██  ███   █     ██   ██
+ █   █          █   █     ██    ██    █   █       █   ██   █               ██   █       █   ██   ██    ██  ███  █       █   ██
+ █   ██         █   █    █        █   █   ██     ██   ██   █               ██   █      ██   ██   ██    █   ███   █      █   █
+  █     █████   █   █  ██    ██    ██  █   ███████   █  █   ██████   █     █ █    ██████   █  █   █████    █ █    ███ ██   ██
+   ██        █  █   █ ██   ██   █    █  █           █    █           █ █   █  █           █    █         ██   ██          █
+      ████████  ██ ██ █████      █████    ███   ███        ███   ███   ██ ██    ███   ████      ███   ███       ███   ████
 EOF
-echo -e "[0m[1;37mSecure Tunnel Management[0m"
-echo -e "[90m──────────────────────────────────────────[0m"
-echo -e "[36mPanel Version :[0m ${SCRIPT_VERSION}"
-if [[ -x "$CORE_FILE" ]]; then
-local core_version
-core_version=$("$CORE_FILE" -v 2>/dev/null || echo "Installed")
-echo -e "[36mCore Version  :[0m ${core_version}"
+else
+cat << 'EOF'
+          █████████
+        █████████████
+       ███████████████
+    █████████████████████
+   ███████████████████████
+   ██████   ██████████████
+   ████  ███  ███████████
+    ███ █████ ███████████
+       █████
+
+       T I X O C L O U D
+          T U N N E L
+EOF
 fi
-echo -e "[36mTelegram      :[0m ${BRAND_CHANNEL}"
-echo -e "[36mWebsite       :[0m ${BRAND_WEBSITE}"
+
+echo -e "\033[0m\033[1;37mTixoCloud Private Tunnel Platform\033[0m"
+echo -e "\033[90m──────────────────────────────────────────────\033[0m"
+echo -e "\033[36mConsole Build  :\033[0m ${SCRIPT_VERSION}"
+echo -e "\033[36mTunnel Engine  :\033[0m ${ENGINE_EDITION}"
+echo -e "\033[36mTelegram       :\033[0m ${BRAND_CHANNEL}"
+echo -e "\033[36mWebsite        :\033[0m ${BRAND_WEBSITE}"
 }
+
 display_server_info() {
 echo -e "\e[93m═══════════════════════════════════════════\e[0m"
 echo -e "\033[36mIP Address:\033[0m $SERVER_IP"
 echo -e "\033[36mLocation:\033[0m $SERVER_COUNTRY"
 echo -e "\033[36mDatacenter:\033[0m $SERVER_ISP"
 }
-display_backhaul_core_status() {
+display_engine_status() {
 if [[ -f "${CORE_FILE}" ]]; then
-echo -e "\033[36mCore Status   :\033[0m \033[32m● Online / Installed\033[0m"
+echo -e "\033[36mEngine Status :\033[0m \033[32m● Package Installed\033[0m"
 else
-echo -e "\033[36mCore Status   :\033[0m \033[31m● Not Installed\033[0m"
+echo -e "\033[36mEngine Status :\033[0m \033[31m● Package Missing\033[0m"
 fi
 echo -e "\e[93m═══════════════════════════════════════════\e[0m"
 }
@@ -922,11 +996,20 @@ press_key
 }
 view_service_logs() {
 clear
-journalctl -eu "$1" -f -o cat
+colorize cyan "Live telemetry — press Ctrl+C to return" bold
+journalctl -eu "$1" -f -o cat | sed -u \
+  -e 's/Backhaul/Tixo Aether/g' \
+  -e 's/backhaul/tixo-engine/g' \
+  -e 's/bbackhaul/Tixo TCP Relay/g' \
+  -e 's/High-Performance Reverse Network Tunnel/TixoCloud Secure Tunnel Engine/g'
 }
 view_service_status() {
 clear
-systemctl status "$1"
+systemctl status "$1" --no-pager | sed -u \
+  -e 's/bbackhaul/Tixo TCP Relay/g' \
+  -e 's/Backhaul/Tixo Aether/g' \
+  -e 's/backhaul/tixo-engine/g' \
+  -e 's/High-Performance Reverse Network Tunnel/TixoCloud Secure Tunnel Engine/g'
 press_key
 }
 remove_core() {
@@ -935,11 +1018,11 @@ colorize red "Delete all services first."
 sleep 3
 return 1
 fi
-colorize yellow "Remove TixoTunnel Core and its files? (y/n)"
+colorize yellow "Remove the Tixo Aether Engine and its files? (y/n)"
 read -r confirm
 if [[ $confirm == [yY] ]]; then
 [[ -d "$config_dir" ]] && rm -rf "$config_dir"
-colorize green "TixoTunnel Core removed successfully." bold
+colorize green "Tixo Aether Engine removed successfully." bold
 fi
 press_key
 }
@@ -951,6 +1034,7 @@ colorize cyan "Updating TixoTunnel panel..." bold
 if curl -fL --retry 3 -o "$tmp_file" "$url"; then
 install -m 0755 "$tmp_file" "/root/TixoTunnel.sh"
 install -m 0755 "$tmp_file" "/usr/local/bin/tixotunnel"
+install -m 0755 "$tmp_file" "/usr/local/bin/tixocloud"
 rm -f "$tmp_file"
 colorize green "Panel updated successfully." bold
 sleep 2
@@ -963,7 +1047,7 @@ fi
 }
 configure_tunnel() {
 [[ ! -d "$config_dir" ]] && {
-colorize red "Install TixoTunnel Core first."
+colorize red "Install the Tixo Aether Engine first."
 press_key
 return 1
 }
@@ -983,14 +1067,14 @@ display_menu() {
 clear
 display_logo
 display_server_info
-display_backhaul_core_status
+display_engine_status
 echo
 colorize green   " [1] Create New Tunnel" bold
 colorize cyan    " [2] Manage Tunnels" bold
 colorize yellow  " [3] Tunnel Status" bold
-colorize magenta " [4] Update Core" bold
+colorize magenta " [4] Update Engine" bold
 echo              " [5] Update Panel"
-colorize red      " [6] Remove Core" bold
+colorize red      " [6] Remove Engine" bold
 echo              " [0] Exit"
 echo -e "[90m──────────────────────────────────────────[0m"
 }
@@ -1000,7 +1084,7 @@ case $choice in
 1) configure_tunnel ;;
 2) tunnel_management ;;
 3) check_tunnel_status ;;
-4) download_and_extract_backhaul "menu" ;;
+4) download_tixo_engine "menu" ;;
 5) update_script ;;
 6) remove_core ;;
 0) clear; exit 0 ;;
