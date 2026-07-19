@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -o pipefail
 
-SCRIPT_VERSION="NOVA-5.0"
+SCRIPT_VERSION="NOVA-5.1"
 ENGINE_EDITION="AETHER-X1"
 BRAND_NAME="TixoTunnel"
 BRAND_CHANNEL="@TixoCloud"
@@ -113,6 +113,29 @@ local title="$1"
 echo -e "\033[38;5;245m────────────────────────────────────────────────────────────────────\033[0m"
 echo -e "\033[97m ${title}\033[0m"
 echo -e "\033[38;5;245m────────────────────────────────────────────────────────────────────\033[0m"
+}
+wizard_header() {
+local step="$1" title="$2" subtitle="${3:-}"
+echo -e "\033[38;5;245m────────────────────────────────────────────────────────────────────\033[0m"
+printf "\033[38;5;51m STEP %-5s\033[0m  \033[97m%s\033[0m\n" "$step" "$title"
+[[ -n "$subtitle" ]] && printf " \033[38;5;245m%s\033[0m\n" "$subtitle"
+echo -e "\033[38;5;245m────────────────────────────────────────────────────────────────────\033[0m"
+}
+select_option() {
+local prompt="$1" default="$2" var_name="$3"; shift 3
+local options=("$@") choice i
+for i in "${!options[@]}"; do
+    printf "  \033[38;5;51m[%d]\033[0m %s\n" "$((i+1))" "${options[$i]}"
+done
+while true; do
+    read -r -p "$prompt [${default}]: " choice
+    choice="${choice:-$default}"
+    if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#options[@]} )); then
+        printf -v "$var_name" '%s' "${options[$((choice-1))]}"
+        return 0
+    fi
+    colorize red "Invalid selection. Choose 1-${#options[@]}."
+done
 }
 press_key() {
 read -r -p "Press Enter to continue..."
@@ -286,7 +309,7 @@ return 1
 }
 prompt_security_section() {
 local is_ipx="$1"
-section_header "Encryption & Identity"
+wizard_header "5/8" "ENCRYPTION & IDENTITY" "Secure both endpoints with one shared key"
 if [[ "$is_ipx" == "true" ]]; then
 prompt_boolean "Enable Encryption" "true" CONFIG[enable_encryption]
 if [[ "${CONFIG[enable_encryption]}" == "true" ]]; then
@@ -313,52 +336,35 @@ echo ""
 prompt_transport_section() {
 local mode="$1"
 local is_ipx="false"
-section_header "Transport Fabric"
+wizard_header "1/8" "TRANSPORT FABRIC" "Choose the carrier used between both endpoints"
 local valid_transports=(tcp tcpmux xtcpmux ws wss wsmux wssmux xwsmux anytls tun)
-echo "Available transports:"
-printf '  • %s\n' "${valid_transports[@]}"
-while true; do
-echo -ne "Select transport: "
-read -r CONFIG[transport_type]
-[[ " ${valid_transports[*]} " =~ " ${CONFIG[transport_type]} " ]] && break
-colorize red "Invalid transport."
-done
+select_option "Transport" "10" CONFIG[transport_type] "${valid_transports[@]}"
 if [[ "${CONFIG[transport_type]}" == "tun" ]]; then
-echo
-local encapsulations=(tcp ipx)
-echo "Available encapsulations:"
-printf '  • %s\n' "${encapsulations[@]}"
-while true; do
-echo -ne "Select encapsulation: "
-read -r CONFIG[tun_encapsulation]
-[[ " ${encapsulations[*]} " =~ " ${CONFIG[tun_encapsulation]} " ]] && break
-colorize red "Invalid encapsulation."
-done
+    echo
+    wizard_header "2/8" "TUN ENCAPSULATION" "Select standard TCP or native IPX packet mode"
+    local encapsulations=(tcp ipx)
+    select_option "Encapsulation" "2" CONFIG[tun_encapsulation] "${encapsulations[@]}"
 fi
 echo
-if [[ "${CONFIG[tun_encapsulation]}" == "ipx" ]]; then
-is_ipx="true"
-fi
+[[ "${CONFIG[tun_encapsulation]}" == "ipx" ]] && is_ipx="true"
 if [[ "$is_ipx" != "true" ]]; then
-prompt_boolean "Enable TCP_NODELAY" "true" CONFIG[nodelay]
+    prompt_boolean "Enable TCP_NODELAY" "true" CONFIG[nodelay]
 fi
 if [[ "$mode" == "server" ]]; then
-if [[ "${CONFIG[transport_type]}" == "tcp" ]]; then
-prompt_boolean "Accept UDP over TCP" "false" CONFIG[accept_udp]
-fi
-if [[ ! "${CONFIG[transport_type]}" =~ ^(tun|ws)$ ]] && [[ "$is_ipx" != "true" ]]; then
-prompt_boolean "Enable Proxy Protocol" "false" CONFIG[proxy_protocol]
-fi
+    if [[ "${CONFIG[transport_type]}" == "tcp" ]]; then
+        prompt_boolean "Accept UDP over TCP" "false" CONFIG[accept_udp]
+    fi
+    if [[ ! "${CONFIG[transport_type]}" =~ ^(tun|ws)$ ]] && [[ "$is_ipx" != "true" ]]; then
+        prompt_boolean "Enable Proxy Protocol" "false" CONFIG[proxy_protocol]
+    fi
 else
-if [[ "${CONFIG[transport_type]}" != "tun" ]]; then
-prompt_with_default "Connection Pool" "8" CONFIG[connection_pool]
-fi
+    if [[ "${CONFIG[transport_type]}" != "tun" ]]; then
+        prompt_with_default "Connection Pool" "8" CONFIG[connection_pool]
+    fi
 fi
 CONFIG[heartbeat_interval]="10"
 CONFIG[heartbeat_timeout]="25"
-if [[ "$is_ipx" != "true" ]]; then
-CONFIG[keepalive_period]="40"
-fi
+[[ "$is_ipx" != "true" ]] && CONFIG[keepalive_period]="40"
 echo ""
 }
 prompt_mux_section() {
@@ -439,7 +445,7 @@ echo ""
 prompt_tuning_section() {
 local is_ipx="$1"
 local is_tun="$2"
-section_header "Performance Profile"
+wizard_header "6/8" "PERFORMANCE PROFILE" "Tune kernel buffers and worker behavior"
 prompt_boolean "Enable Auto Tuning" "true" CONFIG[auto_tuning]
 echo
 colorize magenta "Profiles: balanced, fast, latency, resource" normal
@@ -468,7 +474,7 @@ fi
 echo ""
 }
 prompt_logging_section() {
-section_header "Telemetry Settings"
+wizard_header "7/8" "TELEMETRY" "Choose the amount of runtime detail"
 colorize magenta "Levels: panic, fatal, error, warn, info, debug, trace"
 prompt_with_default "Log Level" "info" CONFIG[log_level]
 echo ""
@@ -497,7 +503,7 @@ echo -ne "Enter port mappings (comma-separated): "
 read -r CONFIG[ports_mapping]
 echo ""
 else
-section_header "Tixo Route Mapping"
+wizard_header "8/8" "ROUTE MAPPING" "Map public ports to destination services"
 colorize magenta "Choose the forwarding engine:"
 echo "  1) Tixo TCP Relay       — optimized TCP forwarding"
 echo "  2) Netfilter Gateway    — TCP + UDP forwarding"
@@ -524,22 +530,10 @@ prompt_ipx_section() {
 local is_ipx="$1"
 local mode="$2"
 [[ "$is_ipx" != "true" ]] && return
-section_header "Packet Fabric"
+wizard_header "3/8" "PACKET FABRIC" "Build the IPX path and packet profile"
 CONFIG[ipx_mode]="$mode"
 AVAILABLE_PROFILES=("icmp" "ipip" "udp" "tcp" "gre" "bip")
-colorize magenta "Available profiles: ${AVAILABLE_PROFILES[*]}"
-while true; do
-prompt_with_default "Profile" "tcp" CONFIG[ipx_profile]
-CONFIG[ipx_profile]="${CONFIG[ipx_profile],,}"
-for profile in "${AVAILABLE_PROFILES[@]}"; do
-if [[ "${CONFIG[ipx_profile]}" == "$profile" ]]; then
-break 2
-fi
-done
-colorize red "Invalid profile: ${CONFIG[ipx_profile]}"
-echo
-colorize yellow "Please choose one of: ${AVAILABLE_PROFILES[*]}"
-done
+select_option "IPX Profile" "4" CONFIG[ipx_profile] "${AVAILABLE_PROFILES[@]}"
 prompt_with_default "Listen IP" $SERVER_IP CONFIG[ipx_listen_ip]
 while :; do
 prompt_with_default "Destination IPv4" "" CONFIG[ipx_dst_ip]
@@ -552,8 +546,7 @@ interface=$(ip route show default | awk '{print $5}')
 prompt_with_default "Network Interface" "$interface" CONFIG[ipx_interface]
 
 echo ""
-section_header "Custom Packet / IP Spoofing"
-colorize gray "Optional: enable this only when you need custom packet spoofing."
+wizard_header "4/8" "IP SPOOFING" "Optional custom packet identity for advanced routes"
 prompt_boolean "Enable Custom Packet" "false" CONFIG[custom_packet]
 if [[ "${CONFIG[custom_packet]}" == "true" ]]; then
     if [[ "$mode" == "server" ]]; then
@@ -770,6 +763,11 @@ if [[ "$is_ipx" == "true" ]]; then
     printf "  IP Spoofing : %s\n" "${CONFIG[custom_packet]}"
 fi
 printf "  Encryption  : %s\n" "${CONFIG[enable_encryption]:-token}"
+if [[ "${CONFIG[enable_encryption]}" == "true" && -n "${CONFIG[psk]}" ]]; then
+    echo
+    printf "  Shared Key  : \033[1;33m%s\033[0m\n" "${CONFIG[psk]}"
+    printf "  \033[38;5;245mCopy this key and use the exact same value on the peer server.\033[0m\n"
+fi
 echo
 read -r -p "Create this tunnel? [Y/n]: " confirm_create
 confirm_create="${confirm_create:-Y}"
@@ -981,6 +979,77 @@ done
 echo
 press_key
 }
+scheduler_unit_base() {
+local service="${1%.service}"
+printf "/etc/systemd/system/%s-auto-restart" "$service"
+}
+restart_scheduler() {
+local service="$1" base timer_file service_file current="Disabled" choice value unit
+base=$(scheduler_unit_base "$service")
+timer_file="${base}.timer"
+service_file="${base}.service"
+[[ -f "$timer_file" ]] && current=$(grep -E '^OnUnitActiveSec=' "$timer_file" | cut -d= -f2-)
+while true; do
+    clear
+    section_header "Restart Scheduler"
+    printf "  Service     : %s\n" "$service"
+    printf "  Schedule    : %s\n\n" "$current"
+    echo "  [1] Set interval"
+    echo "  [2] Disable scheduler"
+    echo "  [0] Back"
+    echo
+    read -r -p "Select an option [0-2]: " choice
+    case "$choice" in
+        1)
+            echo
+            echo "  [1] Minutes"
+            echo "  [2] Hours"
+            read -r -p "Interval unit [1-2]: " unit
+            [[ "$unit" == "1" || "$unit" == "2" ]] || { colorize red "Invalid unit."; sleep 1; continue; }
+            read -r -p "Restart every how many $([[ "$unit" == "1" ]] && echo minutes || echo hours)? " value
+            [[ "$value" =~ ^[1-9][0-9]*$ ]] || { colorize red "Enter a positive whole number."; sleep 1; continue; }
+            [[ "$unit" == "1" ]] && interval="${value}min" || interval="${value}h"
+            cat > "$service_file" <<EOF
+[Unit]
+Description=Scheduled restart for $service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/systemctl restart $service
+EOF
+            cat > "$timer_file" <<EOF
+[Unit]
+Description=Auto restart timer for $service
+
+[Timer]
+OnBootSec=$interval
+OnUnitActiveSec=$interval
+AccuracySec=1min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+            systemctl daemon-reload
+            systemctl enable --now "$(basename "$timer_file")" >/dev/null 2>&1
+            current="$interval"
+            colorize green "Scheduler enabled: every $interval" bold
+            sleep 2
+            ;;
+        2)
+            systemctl disable --now "$(basename "$timer_file")" >/dev/null 2>&1 || true
+            rm -f "$timer_file" "$service_file"
+            systemctl daemon-reload
+            current="Disabled"
+            colorize green "Scheduler disabled." bold
+            sleep 2
+            ;;
+        0) return ;;
+        *) colorize red "Invalid option."; sleep 1 ;;
+    esac
+done
+}
+
 tunnel_management() {
 if ! ls "$config_dir"/*.toml 1> /dev/null 2>&1; then
 colorize red "No config files found." bold
@@ -1031,6 +1100,7 @@ colorize red "1) Remove Tunnel"
 colorize yellow "2) Restart Tunnel"
 echo "3) Live Monitor"
 echo "4) Service Details"
+echo "5) Restart Scheduler"
 echo
 read -r -p "Enter your choice (0 to return): " choice
 case $choice in
@@ -1038,6 +1108,7 @@ case $choice in
 2) restart_service "$service_name" ;;
 3) view_service_logs "$service_name" ;;
 4) view_service_status "$service_name" ;;
+5) restart_scheduler "$service_name" ;;
 0) return ;;
 *) colorize red "Invalid option!" && sleep 1 ;;
 esac
@@ -1048,6 +1119,10 @@ config_name=$(basename "${config_path%.toml}")
 service_name="tixotunnel-${config_name}.service"
 service_path="$service_dir/$service_name"
 [ -f "$config_path" ] && rm -f "$config_path"
+local scheduler_base
+scheduler_base=$(scheduler_unit_base "$service_name")
+systemctl disable --now "$(basename "${scheduler_base}.timer")" >/dev/null 2>&1 || true
+rm -f "${scheduler_base}.timer" "${scheduler_base}.service"
 if [[ -f "$service_path" ]]; then
 systemctl is-active --quiet "$service_name" && systemctl disable --now "$service_name" >/dev/null 2>&1
 rm -f "$service_path"
@@ -1072,14 +1147,25 @@ press_key
 }
 brand_engine_output() {
 sed -u -E \
-  -e '/^[[:space:]]*╔═+╗[[:space:]]*$/d' \
-  -e '/^[[:space:]]*╚═+╝[[:space:]]*$/d' \
-  -e '/^[[:space:]]*║[[:space:]]*$/d' \
+  -e '/^[[:space:]]*[╔║╚].*[╗║╝][[:space:]]*$/d' \
   -e '/Backhaul v[0-9]/d' \
   -e '/High-Performance Reverse Network Tunnel/d' \
+  -e '/^[[:space:]]*root[[:space:]]*:[[:space:]]*PWD=/d' \
+  -e '/pam_unix\(sudo:session\)/d' \
+  -e '/^[[:space:]]*🌐 IP Address:/d' \
+  -e '/^[[:space:]]*📋 Configuration Summary:/d' \
+  -e '/^[[:space:]]*🔧 General Settings:/d' \
+  -e '/^[[:space:]]*🚀 Starting /d' \
+  -e '/^[[:space:]]*Mode: /d' \
+  -e '/^[[:space:]]*Log Level: /d' \
+  -e '/^[[:space:]]*Transport: /d' \
+  -e '/^[[:space:]]*TCP Optimization: /d' \
+  -e '/^═+$/d' \
   -e 's/Backhaul/Tixo Aether/g' \
   -e 's/bbackhaul/Tixo TCP Relay/g' \
-  -e 's/backhaul/tixo-engine/g'
+  -e 's/backhaul/tixo-engine/g' \
+  -e 's/Starting Ipx/Starting IPX Fabric/g' \
+  -e 's/custom packet status:/IP spoofing:/g'
 }
 show_live_header() {
 local service="$1"
@@ -1141,14 +1227,16 @@ press_key
 return 1
 }
 clear
-echo ""
-colorize green "1) Configure IRAN (Server)" bold
-colorize magenta "2) Configure KHAREJ (Client)" bold
-echo ""
-read -r -p "Enter your choice: " configure_choice
+section_header "Create Tunnel"
+echo -e "  \033[38;5;51m[1]\033[0m IRAN   \033[38;5;245mServer / Listener\033[0m"
+echo -e "  \033[38;5;51m[2]\033[0m KHAREJ \033[38;5;245mClient / Connector\033[0m"
+echo -e "  \033[38;5;245m[0] Back\033[0m"
+echo
+read -r -p "Select endpoint role [0-2]: " configure_choice
 case "$configure_choice" in
 1) configure_server "server" ;;
 2) configure_server "client" ;;
+0) return ;;
 *) colorize red "Invalid option!" && sleep 1 ;;
 esac
 }
