@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -o pipefail
 
-SCRIPT_VERSION="NOVA-4.2"
+SCRIPT_VERSION="NOVA-5.0"
 ENGINE_EDITION="AETHER-X1"
 BRAND_NAME="TixoTunnel"
 BRAND_CHANNEL="@TixoCloud"
@@ -107,6 +107,12 @@ bold) style_code=$bold ;; underline) style_code=$underline ;;
 normal | *) style_code=$normal ;;
 esac
 echo -e "${style_code}${color_code}${text}${reset}"
+}
+section_header() {
+local title="$1"
+echo -e "\033[38;5;245m────────────────────────────────────────────────────────────────────\033[0m"
+echo -e "\033[97m ${title}\033[0m"
+echo -e "\033[38;5;245m────────────────────────────────────────────────────────────────────\033[0m"
 }
 press_key() {
 read -r -p "Press Enter to continue..."
@@ -238,7 +244,7 @@ CONFIG=()
 }
 prompt_connection_section() {
 local mode="$1"  # server or client
-colorize blue "━━━ Link Endpoint ━━━" bold
+section_header "Link Endpoint"
 if [[ "$mode" == "server" ]]; then
 prompt_with_default "Bind Address" ":8443" CONFIG[bind_addr]
 if [[ -n "${CONFIG[bind_addr]}" && "${CONFIG[bind_addr]}" != *:* ]]; then
@@ -280,7 +286,7 @@ return 1
 }
 prompt_security_section() {
 local is_ipx="$1"
-colorize blue "━━━ Encryption & Identity ━━━" bold
+section_header "Encryption & Identity"
 if [[ "$is_ipx" == "true" ]]; then
 prompt_boolean "Enable Encryption" "true" CONFIG[enable_encryption]
 if [[ "${CONFIG[enable_encryption]}" == "true" ]]; then
@@ -307,7 +313,7 @@ echo ""
 prompt_transport_section() {
 local mode="$1"
 local is_ipx="false"
-colorize blue "━━━ Transport Fabric ━━━" bold
+section_header "Transport Fabric"
 local valid_transports=(tcp tcpmux xtcpmux ws wss wsmux wssmux xwsmux anytls tun)
 echo "Available transports:"
 printf '  • %s\n' "${valid_transports[@]}"
@@ -360,7 +366,7 @@ local transport="$1"
 if [[ ! "$transport" =~ mux$ ]]; then
 return
 fi
-colorize blue "━━━ Mux Configuration ━━━" bold
+section_header "Mux Configuration"
 prompt_with_default "Mux Version [1 or 2]" "2" CONFIG[mux_version]
 prompt_with_default "Mux Concurrency" "8" CONFIG[mux_concurrency]
 CONFIG[mux_framesize]="32768"
@@ -373,7 +379,7 @@ local transport="$1"
 local mode="$2"
 local is_ipx="$3"
 [[ "$transport" != "tun" ]] && return
-colorize blue "━━━ Virtual Interface ━━━" bold
+section_header "Virtual Interface"
 prompt_with_default "TUN Device Name" "tixo" CONFIG[tun_name]
 local default_local default_remote
 if [[ "$mode" == "server" ]]; then
@@ -412,7 +418,7 @@ local transport="$2"
 if [[ ! "$transport" =~ ^(anytls|wss|wssmux)$ ]]; then
 return
 fi
-colorize blue "━━━ TLS Configuration ━━━" bold
+section_header "TLS Configuration"
 if [[ "$transport" == "anytls" ]]; then
 prompt_with_default "SNI" "www.digikala.com" CONFIG[tls_sni]
 fi
@@ -433,7 +439,7 @@ echo ""
 prompt_tuning_section() {
 local is_ipx="$1"
 local is_tun="$2"
-colorize blue "━━━ Performance Profile ━━━" bold
+section_header "Performance Profile"
 prompt_boolean "Enable Auto Tuning" "true" CONFIG[auto_tuning]
 echo
 colorize magenta "Profiles: balanced, fast, latency, resource" normal
@@ -462,7 +468,7 @@ fi
 echo ""
 }
 prompt_logging_section() {
-colorize blue "━━━ Telemetry Settings ━━━" bold
+section_header "Telemetry Settings"
 colorize magenta "Levels: panic, fatal, error, warn, info, debug, trace"
 prompt_with_default "Log Level" "info" CONFIG[log_level]
 echo ""
@@ -480,7 +486,7 @@ local mode="$1"
 local is_tun="$2"
 [[ "$mode" != "server" ]] && return
 if [[ "$is_tun" != "true" ]]; then
-colorize blue "━━━ Route Mapping ━━━" bold
+section_header "Route Mapping"
 colorize green "Supported formats:"
 echo "  1. 443           - Listen on 443, forward to 443"
 echo "  2. 443=5000      - Listen on 443, forward to 5000"
@@ -491,7 +497,7 @@ echo -ne "Enter port mappings (comma-separated): "
 read -r CONFIG[ports_mapping]
 echo ""
 else
-colorize blue "━━━ Tixo Route Mapping ━━━" bold
+section_header "Tixo Route Mapping"
 colorize magenta "Choose the forwarding engine:"
 echo "  1) Tixo TCP Relay       — optimized TCP forwarding"
 echo "  2) Netfilter Gateway    — TCP + UDP forwarding"
@@ -518,7 +524,7 @@ prompt_ipx_section() {
 local is_ipx="$1"
 local mode="$2"
 [[ "$is_ipx" != "true" ]] && return
-colorize blue "━━━ Packet Fabric ━━━" bold
+section_header "Packet Fabric"
 CONFIG[ipx_mode]="$mode"
 AVAILABLE_PROFILES=("icmp" "ipip" "udp" "tcp" "gre" "bip")
 colorize magenta "Available profiles: ${AVAILABLE_PROFILES[*]}"
@@ -546,7 +552,7 @@ interface=$(ip route show default | awk '{print $5}')
 prompt_with_default "Network Interface" "$interface" CONFIG[ipx_interface]
 
 echo ""
-colorize blue "━━━ Custom Packet / IP Spoofing ━━━" bold
+section_header "Custom Packet / IP Spoofing"
 colorize gray "Optional: enable this only when you need custom packet spoofing."
 prompt_boolean "Enable Custom Packet" "false" CONFIG[custom_packet]
 if [[ "${CONFIG[custom_packet]}" == "true" ]]; then
@@ -754,6 +760,21 @@ fi
 if [[ -z "$tunnel_port" ]]; then
 tunnel_port=$(echo "${CONFIG[tun_health_port]}")
 fi
+section_header "Review"
+printf "  Role        : %s\n" "$mode_name"
+printf "  Transport   : %s\n" "${CONFIG[transport_type]}"
+[[ "$is_tun" == "true" ]] && printf "  Interface   : %s (%s)\n" "${CONFIG[tun_name]}" "${CONFIG[tun_encapsulation]}"
+if [[ "$is_ipx" == "true" ]]; then
+    printf "  IPX Profile : %s\n" "${CONFIG[ipx_profile]}"
+    printf "  Destination : %s\n" "${CONFIG[ipx_dst_ip]}"
+    printf "  IP Spoofing : %s\n" "${CONFIG[custom_packet]}"
+fi
+printf "  Encryption  : %s\n" "${CONFIG[enable_encryption]:-token}"
+echo
+read -r -p "Create this tunnel? [Y/n]: " confirm_create
+confirm_create="${confirm_create:-Y}"
+[[ "$confirm_create" =~ ^[Yy]$ ]] || { colorize yellow "Configuration cancelled."; press_key; return 0; }
+
 local config_file
 if [[ "$mode" == "server" ]]; then
 config_file="${config_dir}/iran${tunnel_port}.toml"
@@ -813,10 +834,11 @@ echo "  |____|   |__/__/\\_ \\____/ \\______  /____/\\____/|____/\\____ |"
 echo "                    \\/             \\/                       \\/"
 echo -e "${reset}"
 echo -e "${gray}════════════════════════════════════════════════════════════════════${reset}"
-printf "${white} %-14s${reset} ${cyan}%-16s${reset} ${white}%-14s${reset} ${green}%s${reset}\n" \
+printf "${white} %-10s${reset} ${cyan}%-15s${reset} ${white}%-10s${reset} ${green}%s${reset}\n" \
     "Console" "$SCRIPT_VERSION" "Engine" "$ENGINE_EDITION"
-printf "${white} %-14s${reset} ${cyan}%-16s${reset} ${white}%-14s${reset} ${cyan}%s${reset}\n" \
-    "Channel" "$BRAND_CHANNEL" "Website" "$BRAND_WEBSITE"
+printf "${white} %-10s${reset} ${green}%-15s${reset} ${white}%-10s${reset} ${cyan}%s${reset}\n" \
+    "Status" "● Operational" "Channel" "$BRAND_CHANNEL"
+printf "${white} %-10s${reset} ${gray}%s${reset}\n" "Features" "TUN • IPX • Encryption • Auto Tuning • IP Spoofing"
 echo -e "${gray}════════════════════════════════════════════════════════════════════${reset}"
 }
 
@@ -861,7 +883,7 @@ echo -e "${gray}═════════════════════�
 }
 display_engine_status() {
 if [[ -x "$CORE_FILE" ]]; then
-    echo -e "\033[38;5;46m ● Engine ready\033[0m"
+    echo -e "\033[38;5;46m ● Engine ready\033[0m  \033[38;5;245mTUN • IPX • Spoof Support\033[0m"
 else
     echo -e "\033[38;5;196m ● Engine missing\033[0m"
 fi
@@ -976,12 +998,16 @@ config_name=$(basename "$config_path")
 if [[ "$config_name" =~ ^iran([0-9]+)\.toml$ ]]; then
 port="${BASH_REMATCH[1]}"
 configs+=("$config_path")
-echo -e "\033[35m${index}\033[0m) \033[32mIran\033[0m (port: \033[33m$port\033[0m)"
+service_name="tixotunnel-iran${port}.service"
+if systemctl is-active --quiet "$service_name"; then status="\033[38;5;46m● Running\033[0m"; else status="\033[38;5;245m○ Stopped\033[0m"; fi
+echo -e "\033[35m${index}\033[0m) Iran · Port \033[33m$port\033[0m · $status"
 ((index++))
 elif [[ "$config_name" =~ ^kharej([0-9]+)\.toml$ ]]; then
 port="${BASH_REMATCH[1]}"
 configs+=("$config_path")
-echo -e "\033[35m${index}\033[0m) \033[32mKharej\033[0m (port: \033[33m$port\033[0m)"
+service_name="tixotunnel-kharej${port}.service"
+if systemctl is-active --quiet "$service_name"; then status="\033[38;5;46m● Running\033[0m"; else status="\033[38;5;245m○ Stopped\033[0m"; fi
+echo -e "\033[35m${index}\033[0m) Kharej · Port \033[33m$port\033[0m · $status"
 ((index++))
 fi
 done
@@ -1058,9 +1084,8 @@ sed -u -E \
 show_live_header() {
 local service="$1"
 echo -e "\033[38;5;51m════════════════════════════════════════════════════════════════════\033[0m"
-echo -e "\033[97m                     TixoTunnel Live Monitor\033[0m"
-printf  "\033[38;5;245m                  %-18s  %-12s\033[0m\n" "$SCRIPT_VERSION" "$ENGINE_EDITION"
-printf  "\033[38;5;245m                  Service: %s\033[0m\n" "$service"
+echo -e "\033[97m TixoTunnel Live Monitor\033[0m"
+printf  "\033[38;5;245m Service  %-36s Engine  %s\033[0m\n" "$service" "$ENGINE_EDITION"
 echo -e "\033[38;5;51m════════════════════════════════════════════════════════════════════\033[0m"
 }
 
