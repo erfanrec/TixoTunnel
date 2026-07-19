@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -o pipefail
 
-SCRIPT_VERSION="NOVA-3.1"
+SCRIPT_VERSION="NOVA-3.2"
 ENGINE_EDITION="AETHER-R8"
 BRAND_NAME="TixoTunnel"
 BRAND_CHANNEL="@TixoCloud"
@@ -374,7 +374,7 @@ local mode="$2"
 local is_ipx="$3"
 [[ "$transport" != "tun" ]] && return
 colorize blue "━━━ Virtual Interface ━━━" bold
-prompt_with_default "TUN Device Name" "tixo0" CONFIG[tun_name]
+prompt_with_default "TUN Device Name" "tixo" CONFIG[tun_name]
 local default_local default_remote
 if [[ "$mode" == "server" ]]; then
 default_local="10.10.10.1/24"
@@ -398,7 +398,7 @@ break
 fi
 colorize red "Invalid CIDR format."
 done
-prompt_with_default "Health Port" "1234" CONFIG[tun_health_port]
+prompt_with_default "Health Port" "101" CONFIG[tun_health_port]
 if [[ "$is_ipx" == "true" ]]; then
 prompt_with_default "MTU" "1320" CONFIG[tun_mtu]
 else
@@ -751,12 +751,9 @@ SERVER_IP=$(hostname -I | awk '{print $1}')
 SERVER_COUNTRY=$(curl -sS --max-time 1 "http://ipwhois.app/json/$SERVER_IP" 2>/dev/null | jq -r '.country')
 SERVER_ISP=$(curl -sS --max-time 1 "http://ipwhois.app/json/$SERVER_IP" 2>/dev/null | jq -r '.isp')
 display_logo() {
-local term_cols
-term_cols=$(tput cols 2>/dev/null || echo 80)
-
+clear
 echo -e "\033[31m"
-if (( term_cols >= 145 )); then
-cat << 'EOF'
+cat << 'TIXO_ASCII'
                    █████████
                  █████████████
                 ███████████████
@@ -777,24 +774,7 @@ cat << 'EOF'
   █     █████   █   █  ██    ██    ██  █   ███████   █  █   ██████   █     █ █    ██████   █  █   █████    █ █    ███ ██   ██
    ██        █  █   █ ██   ██   █    █  █           █    █           █ █   █  █           █    █         ██   ██          █
       ████████  ██ ██ █████      █████    ███   ███        ███   ███   ██ ██    ███   ████      ███   ███       ███   ████
-EOF
-else
-cat << 'EOF'
-          █████████
-        █████████████
-       ███████████████
-    █████████████████████
-   ███████████████████████
-   ██████   ██████████████
-   ████  ███  ███████████
-    ███ █████ ███████████
-       █████
-
-       T I X O C L O U D
-          T U N N E L
-EOF
-fi
-
+TIXO_ASCII
 echo -e "\033[0m\033[1;37mTixoCloud Private Tunnel Platform\033[0m"
 echo -e "\033[90m──────────────────────────────────────────────\033[0m"
 echo -e "\033[36mConsole Build  :\033[0m ${SCRIPT_VERSION}"
@@ -994,22 +974,22 @@ colorize red "Service not found"
 fi
 press_key
 }
+brand_engine_output() {
+sed -u -E \
+  -e "s/║[[:space:]]*🚀 Backhaul v[^🚀]*🚀[[:space:]]*║/║               🚀 TixoTunnel ${SCRIPT_VERSION} 🚀                ║/g" \
+  -e "s/High-Performance Reverse Network Tunnel/Tixo Aether Engine • ${ENGINE_EDITION}/g" \
+  -e 's/Backhaul/Tixo Aether/g' \
+  -e 's/bbackhaul/Tixo TCP Relay/g' \
+  -e 's/backhaul/tixo-engine/g'
+}
 view_service_logs() {
 clear
 colorize cyan "Live telemetry — press Ctrl+C to return" bold
-journalctl -eu "$1" -f -o cat | sed -u \
-  -e 's/Backhaul/Tixo Aether/g' \
-  -e 's/backhaul/tixo-engine/g' \
-  -e 's/bbackhaul/Tixo TCP Relay/g' \
-  -e 's/High-Performance Reverse Network Tunnel/TixoCloud Secure Tunnel Engine/g'
+journalctl -eu "$1" -f -o cat | brand_engine_output
 }
 view_service_status() {
 clear
-systemctl status "$1" --no-pager | sed -u \
-  -e 's/bbackhaul/Tixo TCP Relay/g' \
-  -e 's/Backhaul/Tixo Aether/g' \
-  -e 's/backhaul/tixo-engine/g' \
-  -e 's/High-Performance Reverse Network Tunnel/TixoCloud Secure Tunnel Engine/g'
+systemctl status "$1" --no-pager | brand_engine_output
 press_key
 }
 remove_core() {
