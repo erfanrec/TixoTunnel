@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -o pipefail
 
-SCRIPT_VERSION="NOVA-5.1"
+SCRIPT_VERSION="NOVA-5.2"
 ENGINE_EDITION="AETHER-X1"
 BRAND_NAME="TixoTunnel"
 BRAND_CHANNEL="@TixoCloud"
@@ -314,16 +314,11 @@ if [[ "$is_ipx" == "true" ]]; then
 prompt_boolean "Enable Encryption" "true" CONFIG[enable_encryption]
 if [[ "${CONFIG[enable_encryption]}" == "true" ]]; then
 echo
-while true; do
-colorize magenta "Available algorithms: aes-256-gcm, chacha20-poly1305, aes-128-gcm"
-prompt_with_default "Algorithm" "aes-256-gcm" CONFIG[algorithm]
-if is_valid_algorithm "${CONFIG[algorithm]}"; then
-break
-else
-colorize red "Invalid algorithm selected. Please choose one from the list."
-echo
-fi
-done
+colorize magenta "Encryption algorithm"
+select_option "Algorithm" "1" CONFIG[algorithm] \
+    "aes-256-gcm" \
+    "chacha20-poly1305" \
+    "aes-128-gcm"
 prompt_shared_key
 prompt_with_default "KDF Iterations" "100000" CONFIG[kdf_iterations]
 fi
@@ -448,8 +443,12 @@ local is_tun="$2"
 wizard_header "6/8" "PERFORMANCE PROFILE" "Tune kernel buffers and worker behavior"
 prompt_boolean "Enable Auto Tuning" "true" CONFIG[auto_tuning]
 echo
-colorize magenta "Profiles: balanced, fast, latency, resource" normal
-prompt_with_default "Kernel Tuning Profile" "balanced" CONFIG[tuning_profile]
+colorize magenta "Kernel tuning profile"
+select_option "Profile" "1" CONFIG[tuning_profile] \
+    "balanced" \
+    "fast" \
+    "latency" \
+    "resource"
 prompt_with_default "Workers (0 = auto)" "0" CONFIG[workers]
 if [[ "$is_tun" != "true" ]]; then
 prompt_with_default "Channel Size" "4096" CONFIG[channel_size]
@@ -467,16 +466,28 @@ prompt_with_default "SO_SNDBUF (0 = auto)" "0" CONFIG[so_sndbuf]
 fi
 if [[ "$is_tun" != "true" ]] && [[ "$is_ipx" != "true" ]]; then
 echo
-colorize magenta "Buffer Profiles: extreme_low_cpu, ultra_low_cpu, low_cpu, balanced, low_memory" normal
-prompt_with_default "Buffer Profile" "balanced" CONFIG[buffer_profile]
+colorize magenta "Buffer strategy"
+select_option "Buffer profile" "4" CONFIG[buffer_profile] \
+    "extreme_low_cpu" \
+    "ultra_low_cpu" \
+    "low_cpu" \
+    "balanced" \
+    "low_memory"
 prompt_with_default "Read Timeout" "120" CONFIG[read_timeout]
 fi
 echo ""
 }
 prompt_logging_section() {
 wizard_header "7/8" "TELEMETRY" "Choose the amount of runtime detail"
-colorize magenta "Levels: panic, fatal, error, warn, info, debug, trace"
-prompt_with_default "Log Level" "info" CONFIG[log_level]
+colorize magenta "Runtime log detail"
+select_option "Log level" "5" CONFIG[log_level] \
+    "panic" \
+    "fatal" \
+    "error" \
+    "warn" \
+    "info" \
+    "debug" \
+    "trace"
 echo ""
 }
 prompt_accept_udp_section() {
@@ -492,14 +503,14 @@ local mode="$1"
 local is_tun="$2"
 [[ "$mode" != "server" ]] && return
 if [[ "$is_tun" != "true" ]]; then
-section_header "Route Mapping"
-colorize green "Supported formats:"
-echo "  1. 443           - Listen on 443, forward to 443"
-echo "  2. 443=5000      - Listen on 443, forward to 5000"
-echo "  3. 443-600       - Listen on range 443-600"
-echo "  4. 443-600:5201  - Range forwarding to 5201"
-echo ""
-echo -ne "Enter port mappings (comma-separated): "
+wizard_header "8/8" "ROUTE MAPPING" "Publish one or more services through this tunnel"
+printf "  \033[38;5;51m%-18s\033[0m %s\n" "443" "same port on both sides"
+printf "  \033[38;5;51m%-18s\033[0m %s\n" "443=5000" "public 443 → destination 5000"
+printf "  \033[38;5;51m%-18s\033[0m %s\n" "443-600" "publish an entire port range"
+printf "  \033[38;5;51m%-18s\033[0m %s\n" "443-600:5201" "port range → destination 5201"
+echo
+colorize yellow "Multiple mappings can be separated with commas."
+echo -ne "[-] Port map: "
 read -r CONFIG[ports_mapping]
 echo ""
 else
@@ -517,11 +528,12 @@ while true; do
     esac
 done
 echo ""
-colorize green "Supported formats:"
-echo "  1. 443           - Listen on 443, forward to 443"
-echo "  2. 443=5000      - Listen on 443, forward to 5000"
-echo ""
-echo -ne "Enter port mappings (comma-separated): "
+colorize magenta "Port mapping syntax"
+printf "  \033[38;5;51m%-18s\033[0m %s\n" "443" "same port on both sides"
+printf "  \033[38;5;51m%-18s\033[0m %s\n" "443=5000" "public 443 → destination 5000"
+echo
+colorize yellow "Multiple mappings can be separated with commas."
+echo -ne "[-] Port map: "
 read -r CONFIG[ports_mapping]
 echo ""
 fi

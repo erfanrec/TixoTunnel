@@ -2,7 +2,7 @@
 
 Minimal tunnel management console powered by **AETHER-X1**.
 
-**NOVA-5.1** supports TUN, IPX, encryption, auto tuning, multi-tunnel management, live monitoring, and optional IP spoofing/custom packets.
+**NOVA-5.2** supports TUN, IPX, encryption, auto tuning, multi-tunnel management, live monitoring, and optional IP spoofing/custom packets.
 
 ## Install
 
@@ -36,7 +36,7 @@ tixotunnel-core
 - Telegram: `@TixoCloud`
 - Website: `TixoCloud.com`
 
-## NOVA-5.1
+## NOVA-5.2
 
 - Numbered endpoint, transport, encapsulation, and IPX profile selectors
 - Full shared encryption key shown in the final review for peer setup
