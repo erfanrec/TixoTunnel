@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -o pipefail
 
-SCRIPT_VERSION="NOVA-3.2"
-ENGINE_EDITION="AETHER-R8"
+SCRIPT_VERSION="NOVA-4.0"
+ENGINE_EDITION="AETHER-X1"
 BRAND_NAME="TixoTunnel"
 BRAND_CHANNEL="@TixoCloud"
 BRAND_WEBSITE="TixoCloud.com"
@@ -752,51 +752,71 @@ SERVER_COUNTRY=$(curl -sS --max-time 1 "http://ipwhois.app/json/$SERVER_IP" 2>/d
 SERVER_ISP=$(curl -sS --max-time 1 "http://ipwhois.app/json/$SERVER_IP" 2>/dev/null | jq -r '.isp')
 display_logo() {
 clear
-echo -e "\033[31m"
-cat << 'TIXO_ASCII'
-                   █████████
-                 █████████████
-                ███████████████
-           █████████████████████████
-          ███████████████████████████
-         █████████████████████████████
-         ███████      ████████████████
-         █████  █████  ██████████████
- ████      ███ ███████  ████████████                                   ████                                              ████
- █   █          █████                                                  █   █                                            █   ██
- █   █                                                                 █   █                                            █   ██
- █   ████████    █ ██  ████       ███     ████████         ████ ████       █     ████ ███     █ ██      █ ██     ███  ███   ██
- █           █  █   █ █    ██   ██      ██         ██    ██         ██     █  ██         ██  █    █    █   █  ██            ██
- █   ████████   █   █  █     ██     █  █    █████    █  █    █████   ██    █ █   ██████    █ █   ██    █   █ █     ████     ██
- █   █          █   █   ██        ██  █   ██     ██   ██   ██     ███      ███   █     ██   ██   ██    ██  ███   █     ██   ██
- █   █          █   █     ██    ██    █   █       █   ██   █               ██   █       █   ██   ██    ██  ███  █       █   ██
- █   ██         █   █    █        █   █   ██     ██   ██   █               ██   █      ██   ██   ██    █   ███   █      █   █
-  █     █████   █   █  ██    ██    ██  █   ███████   █  █   ██████   █     █ █    ██████   █  █   █████    █ █    ███ ██   ██
-   ██        █  █   █ ██   ██   █    █  █           █    █           █ █   █  █           █    █         ██   ██          █
-      ████████  ██ ██ █████      █████    ███   ███        ███   ███   ██ ██    ███   ████      ███   ███       ███   ████
-TIXO_ASCII
-echo -e "\033[0m\033[1;37mTixoCloud Private Tunnel Platform\033[0m"
-echo -e "\033[90m──────────────────────────────────────────────\033[0m"
-echo -e "\033[36mConsole Build  :\033[0m ${SCRIPT_VERSION}"
-echo -e "\033[36mTunnel Engine  :\033[0m ${ENGINE_EDITION}"
-echo -e "\033[36mTelegram       :\033[0m ${BRAND_CHANNEL}"
-echo -e "\033[36mWebsite        :\033[0m ${BRAND_WEBSITE}"
+local red="\033[38;5;196m" white="\033[97m" gray="\033[38;5;245m"
+local cyan="\033[38;5;51m" green="\033[38;5;46m" reset="\033[0m"
+echo -e "${red}"
+echo "___________.__             _________ .__                   .___"
+echo "\\__    ___/|__|__  _______ \\_   ___ \\|  |   ____  __ __  __| _/"
+echo "  |    |   |  \\  \\/  /  _ \\/    \\  \\/|  |  /  _ \\|  |  \\/ __ |"
+echo "  |    |   |  |>    <  <_> )     \\___|  |_(  <_> )  |  / /_/ |"
+echo "  |____|   |__/__/\\_ \\____/ \\______  /____/\\____/|____/\\____ |"
+echo "                    \\/             \\/                       \\/"
+echo -e "${reset}"
+echo -e "${gray}════════════════════════════════════════════════════════════════════${reset}"
+printf "${white} %-14s${reset} ${cyan}%-16s${reset} ${white}%-14s${reset} ${green}%s${reset}\n" \
+    "Console" "$SCRIPT_VERSION" "Engine" "$ENGINE_EDITION"
+printf "${white} %-14s${reset} ${cyan}%-16s${reset} ${white}%-14s${reset} ${cyan}%s${reset}\n" \
+    "Channel" "$BRAND_CHANNEL" "Website" "$BRAND_WEBSITE"
+echo -e "${gray}════════════════════════════════════════════════════════════════════${reset}"
 }
 
+get_active_tunnel_count() {
+local count=0 service
+for service in "$service_dir"/tixotunnel-*.service; do
+    [[ -e "$service" ]] || continue
+    systemctl is-active --quiet "$(basename "$service")" && ((count++))
+done
+echo "$count"
+}
+get_total_tunnel_count() {
+find "$config_dir" -maxdepth 1 -type f \( -name 'iran*.toml' -o -name 'kharej*.toml' \) 2>/dev/null | wc -l | tr -d ' '
+}
+get_cpu_usage() {
+local a b idle total prev_idle prev_total diff_idle diff_total
+read -r _ a b _ _ idle _ _ _ _ _ < /proc/stat
+prev_idle=$idle; prev_total=$((a+b+idle)); sleep 0.12
+read -r _ a b _ _ idle _ _ _ _ _ < /proc/stat
+idle=$idle; total=$((a+b+idle)); diff_idle=$((idle-prev_idle)); diff_total=$((total-prev_total))
+(( diff_total > 0 )) && echo $((100-(100*diff_idle/diff_total))) || echo 0
+}
 display_server_info() {
-echo -e "\e[93m═══════════════════════════════════════════\e[0m"
-echo -e "\033[36mIP Address:\033[0m $SERVER_IP"
-echo -e "\033[36mLocation:\033[0m $SERVER_COUNTRY"
-echo -e "\033[36mDatacenter:\033[0m $SERVER_ISP"
+local gray="\033[38;5;245m" cyan="\033[38;5;51m" green="\033[38;5;46m" reset="\033[0m"
+local active total cpu ram disk uptime_short
+active=$(get_active_tunnel_count); total=$(get_total_tunnel_count)
+cpu=$(get_cpu_usage)
+ram=$(free | awk '/Mem:/ {printf "%.0f", $3/$2*100}')
+disk=$(df -P / | awk 'NR==2 {gsub(/%/,"",$5); print $5}')
+uptime_short=$(uptime -p 2>/dev/null | sed 's/^up //' || true)
+[[ -z "$SERVER_COUNTRY" || "$SERVER_COUNTRY" == "null" ]] && SERVER_COUNTRY="Unknown"
+[[ -z "$SERVER_ISP" || "$SERVER_ISP" == "null" ]] && SERVER_ISP="Unknown"
+echo -e "${cyan} SERVER${reset}"
+printf "  %-12s : %s\n" "IP Address" "$SERVER_IP"
+printf "  %-12s : %s\n" "Location" "$SERVER_COUNTRY"
+printf "  %-12s : %s\n" "Provider" "$SERVER_ISP"
+printf "  %-12s : %s active / %s total\n" "Tunnels" "$active" "$total"
+echo -e "${gray}────────────────────────────────────────────────────────────────────${reset}"
+echo -e "${cyan} SYSTEM${reset}"
+printf "  CPU %-4s%%    RAM %-4s%%    DISK %-4s%%    UPTIME %s\n" "$cpu" "$ram" "$disk" "${uptime_short:-Unknown}"
+echo -e "${gray}════════════════════════════════════════════════════════════════════${reset}"
 }
 display_engine_status() {
-if [[ -f "${CORE_FILE}" ]]; then
-echo -e "\033[36mEngine Status :\033[0m \033[32m● Package Installed\033[0m"
+if [[ -x "$CORE_FILE" ]]; then
+    echo -e "\033[38;5;46m ● Engine ready\033[0m"
 else
-echo -e "\033[36mEngine Status :\033[0m \033[31m● Package Missing\033[0m"
+    echo -e "\033[38;5;196m ● Engine missing\033[0m"
 fi
-echo -e "\e[93m═══════════════════════════════════════════\e[0m"
 }
+
 check_config_backup() {
 missing_services=()
 for config in "${config_dir}"/iran*.toml "${config_dir}"/kharej*.toml; do
@@ -896,7 +916,7 @@ press_key
 return 1
 fi
 clear
-colorize cyan "TixoTunnel Services" bold
+colorize cyan "TixoTunnel Manager" bold
 echo
 local index=1
 declare -a configs
@@ -929,11 +949,11 @@ selected_config="${configs[$((choice - 1))]}"
 config_name=$(basename "${selected_config%.toml}")
 service_name="tixotunnel-${config_name}.service"
 clear
-colorize cyan "Manage $config_name:" bold
+colorize cyan "Tunnel Control — $config_name" bold
 echo
-colorize red "1) Remove this tunnel"
-colorize yellow "2) Restart this tunnel"
-echo "3) Live Logs"
+colorize red "1) Remove Tunnel"
+colorize yellow "2) Restart Tunnel"
+echo "3) Live Monitor"
 echo "4) Service Details"
 echo
 read -r -p "Enter your choice (0 to return): " choice
@@ -976,19 +996,33 @@ press_key
 }
 brand_engine_output() {
 sed -u -E \
-  -e "s/║[[:space:]]*🚀 Backhaul v[^🚀]*🚀[[:space:]]*║/║               🚀 TixoTunnel ${SCRIPT_VERSION} 🚀                ║/g" \
-  -e "s/High-Performance Reverse Network Tunnel/Tixo Aether Engine • ${ENGINE_EDITION}/g" \
+  -e '/^[[:space:]]*╔═+╗[[:space:]]*$/d' \
+  -e '/^[[:space:]]*╚═+╝[[:space:]]*$/d' \
+  -e '/^[[:space:]]*║[[:space:]]*$/d' \
+  -e '/Backhaul v[0-9]/d' \
+  -e '/High-Performance Reverse Network Tunnel/d' \
   -e 's/Backhaul/Tixo Aether/g' \
   -e 's/bbackhaul/Tixo TCP Relay/g' \
   -e 's/backhaul/tixo-engine/g'
 }
+show_live_header() {
+local service="$1"
+echo -e "\033[38;5;51m════════════════════════════════════════════════════════════════════\033[0m"
+echo -e "\033[97m                     TixoTunnel Live Monitor\033[0m"
+printf  "\033[38;5;245m                  %-18s  %-12s\033[0m\n" "$SCRIPT_VERSION" "$ENGINE_EDITION"
+printf  "\033[38;5;245m                  Service: %s\033[0m\n" "$service"
+echo -e "\033[38;5;51m════════════════════════════════════════════════════════════════════\033[0m"
+}
+
 view_service_logs() {
 clear
-colorize cyan "Live telemetry — press Ctrl+C to return" bold
+show_live_header "$1"
+colorize yellow "Press Ctrl+C to return"
 journalctl -eu "$1" -f -o cat | brand_engine_output
 }
 view_service_status() {
 clear
+show_live_header "$1"
 systemctl status "$1" --no-pager | brand_engine_output
 press_key
 }
@@ -1044,20 +1078,20 @@ case "$configure_choice" in
 esac
 }
 display_menu() {
-clear
 display_logo
 display_server_info
 display_engine_status
 echo
-colorize green   " [1] Create New Tunnel" bold
-colorize cyan    " [2] Manage Tunnels" bold
-colorize yellow  " [3] Tunnel Status" bold
+colorize green   " [1] Create Tunnel" bold
+colorize cyan    " [2] Tunnel Manager" bold
+colorize yellow  " [3] Dashboard" bold
 colorize magenta " [4] Update Engine" bold
-echo              " [5] Update Panel"
+echo              " [5] Update Console"
 colorize red      " [6] Remove Engine" bold
 echo              " [0] Exit"
-echo -e "[90m──────────────────────────────────────────[0m"
+echo -e "\033[38;5;245m────────────────────────────────────────────────────────────────────\033[0m"
 }
+
 read_option() {
 read -r -p "Select an option [0-6]: " choice
 case $choice in
